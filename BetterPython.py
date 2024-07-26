@@ -689,7 +689,7 @@ def extract_function_or_class_name(part: str) -> Optional[str]:
     # \s+: Matches one or more whitespace characters.
     # (\w+): Captures the name of the function or class.
 
-    # Search for the pattern in the input string
+    # Search for the pattern in the input string i.e. see if there's a function or class def
     match: Optional[re.Match] = re.search(pattern, part, re.MULTILINE | re.DOTALL)
 
     # If a match is found, return the name (second captured group)

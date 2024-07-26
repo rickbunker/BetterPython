@@ -99,7 +99,9 @@ def he(func: Callable[..., Any]) -> Callable[..., Any]:
         try:
             # Log the function call with its arguments
             logging.info(f"Calling {func.__name__}")
-            logging.debug(f"Calling {func.__name__} with args: {args}, kwargs: {kwargs}")
+            logging.debug(
+                f"Calling {func.__name__} with args: {args}, kwargs: {kwargs}"
+            )
 
             # Execute the wrapped function and store the result
             result = func(*args, **kwargs)
@@ -679,15 +681,13 @@ def extract_function_or_class_name(part: str) -> Optional[str]:
         The function assumes that the input string is well-formed Python code.
         It can handle multiple decorators and whitespace variations.
     """
-    # Regular expression pattern to match function or class definitions
-    pattern: str = r"(?:@\w+\s*\n)*\s*(def|class)\s+(\w+)"
 
-    # Explanation of the regex pattern:
-    # (?:@\w+\s*\n)* : Optionally match decorators (zero or more)
-    # \s* : Match any whitespace (including newlines)
-    # (def|class) : Match either 'def' or 'class' keyword
-    # \s+ : Match one or more whitespace characters
-    # (\w+) : Capture the name of the function or class (word characters)
+    # search patten to see if there is a def function or class in here
+    pattern: str = r"\b(def|class)\s+(\w+)"
+    # \b: Adds a word boundary to ensure we match 'def' or 'class' as whole words.
+    # (def|class): Matches and captures either 'def' or 'class'.
+    # \s+: Matches one or more whitespace characters.
+    # (\w+): Captures the name of the function or class.
 
     # Search for the pattern in the input string
     match: Optional[re.Match] = re.search(pattern, part, re.MULTILINE | re.DOTALL)
@@ -786,8 +786,10 @@ def reassemble_code(modified_parts: List[Tuple[str, int]]) -> str:
             full_modified_code += "\n"
 
     # Before returning, clean up newlines between decorators and function definitions
-    pattern = r'(@\w+\s*)\n+\s*(@|def\s+|class\s+)'
-    full_modified_code = re.sub(pattern, r'\1\n\2', full_modified_code, flags=re.MULTILINE)
+    pattern = r"(@\w+\s*)\n+\s*(@|def\s+|class\s+)"
+    full_modified_code = re.sub(
+        pattern, r"\1\n\2", full_modified_code, flags=re.MULTILINE
+    )
 
     return full_modified_code
 

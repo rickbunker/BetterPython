@@ -154,7 +154,7 @@ def run_black(file_path: str) -> bool:
     # Attempt to run Black on the file
     try:
         # Run Black as a subprocess, capturing output and errors
-        result: Optional[subprocess.CompletedProcess[str]] = subprocess.run(
+        result: subprocess.CompletedProcess[str] = subprocess.run(
             ["black", file_path],
             check=True,  # Raise CalledProcessError if the command returns a non-zero exit code
             capture_output=True,  # Capture stdout and stderr
@@ -270,7 +270,8 @@ def extract_functions_and_classes_with_text(
         """
 
         def __init__(self) -> None:
-            self.parent_stack: List[ast.AST] = []  # Stack to keep track of parent nodes
+            # Stack to keep track of parent nodes for determining nesting level
+            self.parent_stack: List[ast.AST] = []
 
         def visit(self, node: ast.AST) -> None:
             """
@@ -303,7 +304,7 @@ def extract_functions_and_classes_with_text(
             self.parent_stack.pop()
 
     # Create an instance of the custom visitor
-    visitor = Visitor()
+    visitor: Visitor = Visitor()
 
     # Traverse the AST using the custom visitor
     visitor.visit(tree)
@@ -338,7 +339,6 @@ def setup_anthropic_stuff(
         The function prioritizes the file-based key if provided. If the file is not accessible
         or not provided, it falls back to the environment variable.
     """
-
     # Initialize the API key variable
     anthropic_api_key: str | None = None
 
@@ -519,13 +519,14 @@ def write_modified_code(modified_code: str, output_file: str) -> None:
 
     Raises:
         IOError: If there's an error writing to the output file.
+        Exception: For any other unexpected errors during the process.
 
     Returns:
         None
     """
     try:
         # Open the output file in write mode using a context manager
-        # This ensures the file is properly closed after writing
+        # This ensures the file is properly closed after writing, even if an exception occurs
         with open(output_file, "w", encoding="utf-8") as file:
             # Write the modified code to the file
             # The entire content of modified_code is written at once
@@ -548,6 +549,8 @@ def write_modified_code(modified_code: str, output_file: str) -> None:
         # Catch any other unexpected exceptions
         # This provides a catch-all for unforeseen errors
         print(f"Unexpected error occurred: {str(e)}")
+
+        # Re-raise the exception for higher-level error handling
         raise
 
 
@@ -570,7 +573,6 @@ def get_valid_output_file(output_file: str) -> str:
     Raises:
         SystemExit: If the user chooses to cancel the operation.
     """
-
     while os.path.exists(output_file):
         # Inform the user that the file already exists
         print(f"The file '{output_file}' already exists.")
@@ -668,6 +670,7 @@ def extract_function_or_class_name(part: str) -> Optional[str]:
 
     This function uses a regular expression to find the name of a function or class
     definition, even if it's preceded by decorators. It supports both function and
+
     class definitions.
 
     Args:
@@ -681,16 +684,17 @@ def extract_function_or_class_name(part: str) -> Optional[str]:
         The function assumes that the input string is well-formed Python code.
         It can handle multiple decorators and whitespace variations.
     """
-
-    # search patten to see if there is a def function or class in here
+    # Define the regex pattern to match function or class definitions
     pattern: str = r"\b(def|class)\s+(\w+)"
-    # \b: Adds a word boundary to ensure we match 'def' or 'class' as whole words.
-    # (def|class): Matches and captures either 'def' or 'class'.
-    # \s+: Matches one or more whitespace characters.
-    # (\w+): Captures the name of the function or class.
+    # \b: Word boundary to ensure 'def' or 'class' are whole words
+    # (def|class): Matches and captures either 'def' or 'class'
+    # \s+: Matches one or more whitespace characters
+    # (\w+): Captures the name of the function or class (alphanumeric + underscore)
 
-    # Search for the pattern in the input string i.e. see if there's a function or class def
+    # Search for the pattern in the input string
     match: Optional[re.Match] = re.search(pattern, part, re.MULTILINE | re.DOTALL)
+    # re.MULTILINE: Allows ^ and $ to match at the beginning/end of each line
+    # re.DOTALL: Makes '.' match newlines as well
 
     # If a match is found, return the name (second captured group)
     if match:
@@ -701,6 +705,77 @@ def extract_function_or_class_name(part: str) -> Optional[str]:
 
 
 @he
+def clean_decorators_and_functions(code: str) -> str:
+    """
+    Clean and format decorators and function/class definitions in the given code.
+    This function processes the input code line by line, handling decorators,
+    function/class definitions, and comments. It ensures proper formatting and
+    spacing between decorators and function/class definitions.
+
+    Args:
+        code (str): The input code to be cleaned and formatted.
+
+    Returns:
+        str: The cleaned and formatted code as a single string.
+    """
+    lines = code.split("\n")
+    cleaned_lines = []
+    in_decorator = False
+    comment_buffer = []
+    current_indent = ""
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Preserve current indentation
+        if stripped:
+            current_indent = line[: len(line) - len(stripped)]
+
+        # Handle comments
+        if stripped.startswith("#"):
+            comment_buffer.append(line)
+            continue
+
+        if stripped.startswith("@"):
+            # Add decorator with correct indentation
+            if comment_buffer:
+                cleaned_lines.extend(comment_buffer)
+                comment_buffer = []
+            cleaned_lines.append(f"{current_indent}{stripped}")
+            in_decorator = True
+        elif stripped.startswith(("def ", "class ")):
+            # Add comments immediately before function/class definition
+            if comment_buffer:
+                cleaned_lines.extend(comment_buffer)
+                comment_buffer = []
+
+            if in_decorator:
+                # Add function/class definition immediately after decorator
+                cleaned_lines.append(line)
+                in_decorator = False
+            else:
+                # Add a blank line before function/class if not following a decorator
+                if cleaned_lines and not cleaned_lines[-1].strip().startswith(("#", "@")):
+                    cleaned_lines.append("")
+                cleaned_lines.append(line)
+        else:
+            # Flush any pending comments
+            if comment_buffer:
+                cleaned_lines.extend(comment_buffer)
+                comment_buffer = []
+            # Add the line as is
+            cleaned_lines.append(line)
+            in_decorator = False
+
+    # Flush any remaining comments at the end of the code
+    if comment_buffer:
+        cleaned_lines.extend(comment_buffer)
+
+    # Join all cleaned lines into a single string
+    return "\n".join(cleaned_lines)
+
+
+@he
 def reassemble_code(modified_parts: List[Tuple[str, int]]) -> str:
     """
     Reassemble modified code parts into a single coherent code string.
@@ -708,7 +783,6 @@ def reassemble_code(modified_parts: List[Tuple[str, int]]) -> str:
     This function takes a list of modified code parts, each associated with a nesting level,
     and reassembles them into a single string of code. It handles indentation, function
     scopes, and avoids duplicate function definitions within the same or immediate parent scope.
-    This duplicate function stuff is to deal with nested or inner functions.
 
     Args:
         modified_parts (List[Tuple[str, int]]): A list of tuples, where each tuple contains
@@ -719,20 +793,18 @@ def reassemble_code(modified_parts: List[Tuple[str, int]]) -> str:
     """
     full_modified_code: str = ""
     indent_stack: List[int] = [0]  # Stack to keep track of indentation levels
-    function_stack: List[List[Tuple[str, int]]] = (
-        []
-    )  # Stack to keep track of function scopes
+    function_stack: List[List[Tuple[str, int]]] = []  # Stack to track function scopes
 
     for part, base_nesting_level in modified_parts:
-        lines: List[str] = part.split("\n")
-        part_lines: List[str] = []
+        raw_lines: List[str] = part.split("\n")
+        processed_lines: List[str] = []
         current_function: Optional[Tuple[str, int]] = None
 
-        for line in lines:
+        for line in raw_lines:
             stripped_line: str = line.lstrip()
 
             if not stripped_line:
-                part_lines.append("")  # Preserve empty lines
+                processed_lines.append("")  # Preserve empty lines
                 continue
 
             # Check if this is a function definition
@@ -775,48 +847,45 @@ def reassemble_code(modified_parts: List[Tuple[str, int]]) -> str:
 
             # Calculate total indentation
             total_indent: str = "    " * (len(indent_stack) - 1)
-            part_lines.append(f"{total_indent}{stripped_line}")
+            processed_lines.append(f"{total_indent}{stripped_line}")
 
         # Only add the part if it wasn't skipped due to being a duplicate function
-        if part_lines:
-            full_modified_code += "\n".join(part_lines) + "\n"
+        if processed_lines:
+            full_modified_code += "\n".join(processed_lines) + "\n"
 
         # Add an extra newline between parts if it's not top-level code
         if base_nesting_level > 0:
             full_modified_code += "\n"
 
-    # Before returning, clean up newlines between decorators and function definitions
-    pattern = r"(@\w+\s*)\n+\s*(@|def\s+|class\s+)"
-    full_modified_code = re.sub(
-        pattern, r"\1\n\2", full_modified_code, flags=re.MULTILINE
-    )
+    # Clean up newlines between decorators and function definitions
+    cleaned_code: str = clean_decorators_and_functions(full_modified_code)
 
-    return full_modified_code
+    return cleaned_code
 
 
 @he
 def initial_arguments() -> tuple[argparse.Namespace, str, str]:
     """
-    Parse command-line arguments for the script and return input/output file paths.
+    Parse command-line arguments and return input/output file paths.
 
     This function sets up an argument parser to handle input and output file specifications.
     It defines two optional arguments: input file and output file, both with default values.
 
     Returns:
-        tuple[argparse.Namespace, str, str]: A tuple containing three elements:
-            - args (argparse.Namespace): The parsed command-line arguments.
-            - input_file (str): The path to the input file (default: "input.py").
-            - output_file (str): The path to the output file (default: "output.py").
+        tuple[argparse.Namespace, str, str]: A tuple containing:
+            - args: The parsed command-line arguments.
+            - input_file: The path to the input file (default: "input.py").
+            - output_file: The path to the output file (default: "output.py").
 
     Raises:
         SystemExit: If invalid arguments are provided (handled by argparse).
     """
-    # Create an ArgumentParser object with a description of the script's purpose
+    # Create ArgumentParser object with script description
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Add type hints, comments and docstrings to python functions or classes."
     )
 
-    # Add argument for input file with a short and long option
+    # Add argument for input file
     parser.add_argument(
         "-f",
         "--input-file",
@@ -825,7 +894,7 @@ def initial_arguments() -> tuple[argparse.Namespace, str, str]:
         help="The file containing the Python code to modify.",
     )
 
-    # Add argument for output file with a short and long option
+    # Add argument for output file
     parser.add_argument(
         "-o",
         "--output-file",
@@ -834,14 +903,14 @@ def initial_arguments() -> tuple[argparse.Namespace, str, str]:
         help="The file where we will write the suggested, modified code.",
     )
 
-    # Parse the command-line arguments
+    # Parse command-line arguments
     args: argparse.Namespace = parser.parse_args()
 
-    # Extract input and output file paths from the parsed arguments
+    # Extract input and output file paths
     input_file: str = args.input_file
     output_file: str = args.output_file
 
-    # Return the parsed args and the input/output file paths as a tuple
+    # Return parsed args and file paths as a tuple
     return args, input_file, output_file
 
 
